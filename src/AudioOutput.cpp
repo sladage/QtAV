@@ -64,9 +64,9 @@ int AudioOutput::maxChannels() const
 void AudioOutput::setAudioFormat(const AudioFormat& format)
 {
     DPTR_D(AudioOutput);
-    if (!isSupported(format)) {
+    /*if (!isSupported(format)) {
         return;
-    }
+    }*/
     d.format = format;
 }
 
@@ -137,7 +137,7 @@ qreal AudioOutput::speed() const
 {
     return d_func().speed;
 }
-
+/*
 bool AudioOutput::isSupported(const AudioFormat &format) const
 {
     Q_UNUSED(format);
@@ -155,7 +155,7 @@ bool AudioOutput::isSupported(AudioFormat::ChannelLayout channelLayout) const
     Q_UNUSED(channelLayout);
     return true;
 }
-
+*/
 AudioFormat::SampleFormat AudioOutput::preferredSampleFormat() const
 {
     return AudioFormat::SampleFormat_Float;

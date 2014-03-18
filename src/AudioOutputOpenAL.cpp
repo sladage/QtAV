@@ -42,7 +42,7 @@ void RegisterAudioOutputOpenAL_Man()
 }
 
 // TODO: planar
-static ALenum audioFormatToAL(const AudioFormat& fmt)
+static ALenum audioFormatToAL(const AudioFormat& fmt, AudioFormat::SampleFormat *pref_format, AudioFormat::ChannelLayout *pref_channel, bool *resample)
 {
     ALenum format = 0;
     if (fmt.sampleFormat() == AudioFormat::SampleFormat_Unsigned8) {
@@ -59,6 +59,10 @@ static ALenum audioFormatToAL(const AudioFormat& fmt)
                 format = alGetEnumValue("AL_FORMAT_71CHN8");
             else if (fmt.channels() == 8)
                 format = alGetEnumValue("AL_FORMAT_81CHN8");
+        } else {
+            format = AL_FORMAT_STEREO8; //default 8bit
+            *pref_channel = AudioFormat::ChannelLayout_Stero;
+            *resample = true;
         }
     } else if (fmt.sampleFormat() == AudioFormat::SampleFormat_Signed16) {
         if (fmt.channels() == 1)
@@ -101,9 +105,12 @@ static ALenum audioFormatToAL(const AudioFormat& fmt)
         }
     }
     if (format == 0) {
-        qWarning("AudioOutputOpenAL Error: No OpenAL format available for audio data format %s %s."
+        qWarning("AudioOutputOpenAL Error: No OpenAL format available for audio data format %s %s. Will sample to 16bit audio."
                  , qPrintable(fmt.sampleFormatName())
                  , qPrintable(fmt.channelLayoutName()));
+        format = AL_FORMAT_STEREO16;
+        *pref_format = AudioFormat::SampleFormat_Signed16;
+        *resample = true;
     }
     qDebug("OpenAL audio format: %#x ch:%d, sample format: %s", format, fmt.channels(), qPrintable(fmt.sampleFormatName()));
     return format;
@@ -128,6 +135,7 @@ public:
         , format_al(AL_FORMAT_STEREO16)
         , state(0)
         , last_duration(0)
+        , resample(false)
     {
     }
     ~AudioOutputOpenALPrivate() {
@@ -142,6 +150,9 @@ public:
     qint64 err;
     QMutex mutex;
     QWaitCondition cond;
+    AudioFormat::SampleFormat pref_format;
+    AudioFormat::ChannelLayout pref_channels;
+    bool resample;
 };
 
 AudioOutputOpenAL::AudioOutputOpenAL()
@@ -199,7 +210,9 @@ bool AudioOutputOpenAL::open()
         return false;
     }
     //init params. move to another func?
-    d.format_al = audioFormatToAL(audioFormat());
+    d.pref_format = audioFormat().sampleFormat();
+    d.pref_channels = audioFormat().channelLayout();
+    d.format_al = audioFormatToAL(audioFormat(), &d.pref_format, &d.pref_channels,&d.resample);
 
     alGenBuffers(kBufferCount, d.buffer);
     err = alGetError();
@@ -269,41 +282,33 @@ bool AudioOutputOpenAL::close()
 
 bool AudioOutputOpenAL::isSupported(const AudioFormat& format) const
 {
-    return !!audioFormatToAL(format);
+    return isSupported(format.sampleFormat()) && isSupported(format.channelLayout());
 }
 
 bool AudioOutputOpenAL::isSupported(AudioFormat::SampleFormat sampleFormat) const
 {
-    Q_UNUSED(sampleFormat);
-#ifdef Q_OS_IOS
-    return sampleFormat == AudioFormat::SampleFormat_Unsigned8 || sampleFormat == AudioFormat::SampleFormat_Signed16;
-#endif //Q_OS_IOS
-    return true;
+    DPTR_D(AudioOutputOpenAL);
+    return d.resample;
 }
 
 bool AudioOutputOpenAL::isSupported(AudioFormat::ChannelLayout channelLayout) const
 {
-    Q_UNUSED(channelLayout);
-#ifdef Q_OS_IOS
-    return channelLayout == AudioFormat::ChannelLayout_Mono || channelLayout == AudioFormat::ChannelLayout_Stero;
-#endif //Q_OS_IOS
+    DPTR_D(AudioOutputOpenAL);
+    if (channelLayout != d.pref_channels)
+        return false;
     return true;
 }
 
 AudioFormat::SampleFormat AudioOutputOpenAL::preferredSampleFormat() const
 {
-#ifdef Q_OS_IOS
-    return AudioFormat::SampleFormat_Signed16;
-#endif //Q_OS_IOS
-    return AudioOutput::preferredSampleFormat();
+    DPTR_D(AudioOutputOpenAL);
+    return d.pref_format;
 }
 
 AudioFormat::ChannelLayout AudioOutputOpenAL::preferredChannelLayout() const
 {
-#ifdef Q_OS_IOS
-    return AudioFormat::ChannelLayout_Stero;
-#endif //Q_OS_IOS
-    return AudioOutput::preferredChannelLayout();
+    DPTR_D(AudioOutputOpenAL);
+    return d.pref_channels;
 }
 
 QString AudioOutputOpenAL::name() const
