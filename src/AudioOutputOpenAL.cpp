@@ -108,8 +108,14 @@ static ALenum audioFormatToAL(const AudioFormat& fmt, AudioFormat::SampleFormat 
         qWarning("AudioOutputOpenAL Error: No OpenAL format available for audio data format %s %s. Will sample to 16bit audio."
                  , qPrintable(fmt.sampleFormatName())
                  , qPrintable(fmt.channelLayoutName()));
-        format = AL_FORMAT_STEREO16;
         *pref_format = AudioFormat::SampleFormat_Signed16;
+        if (fmt.channels() == 1) {
+            format = AL_FORMAT_MONO16;
+            *pref_channel = AudioFormat::ChannelLayout_Mono;
+        } else {
+            format = AL_FORMAT_STEREO16;
+            *pref_channel = AudioFormat::ChannelLayout_Stero;
+        }
         *resample = true;
     }
     qDebug("OpenAL audio format: %#x ch:%d, sample format: %s", format, fmt.channels(), qPrintable(fmt.sampleFormatName()));
@@ -151,7 +157,7 @@ public:
     QMutex mutex;
     QWaitCondition cond;
     AudioFormat::SampleFormat pref_format;
-    AudioFormat::ChannelLayout pref_channels;
+    AudioFormat::ChannelLayout pref_channel_layout;
     bool resample;
 };
 
@@ -211,8 +217,8 @@ bool AudioOutputOpenAL::open()
     }
     //init params. move to another func?
     d.pref_format = audioFormat().sampleFormat();
-    d.pref_channels = audioFormat().channelLayout();
-    d.format_al = audioFormatToAL(audioFormat(), &d.pref_format, &d.pref_channels,&d.resample);
+    d.pref_channel_layout = audioFormat().channelLayout();
+    d.format_al = audioFormatToAL(audioFormat(), &d.pref_format, &d.pref_channel_layout,&d.resample);
 
     alGenBuffers(kBufferCount, d.buffer);
     err = alGetError();
@@ -287,28 +293,26 @@ bool AudioOutputOpenAL::isSupported(const AudioFormat& format) const
 
 bool AudioOutputOpenAL::isSupported(AudioFormat::SampleFormat sampleFormat) const
 {
-    DPTR_D(AudioOutputOpenAL);
+    DPTR_D(const AudioOutputOpenAL);
     return d.resample;
 }
 
 bool AudioOutputOpenAL::isSupported(AudioFormat::ChannelLayout channelLayout) const
 {
-    DPTR_D(AudioOutputOpenAL);
-    if (channelLayout != d.pref_channels)
-        return false;
-    return true;
+    DPTR_D(const AudioOutputOpenAL);
+    return d.resample;
 }
 
 AudioFormat::SampleFormat AudioOutputOpenAL::preferredSampleFormat() const
 {
-    DPTR_D(AudioOutputOpenAL);
+    DPTR_D(const AudioOutputOpenAL);
     return d.pref_format;
 }
 
 AudioFormat::ChannelLayout AudioOutputOpenAL::preferredChannelLayout() const
 {
-    DPTR_D(AudioOutputOpenAL);
-    return d.pref_channels;
+    DPTR_D(const AudioOutputOpenAL);
+    return d.pref_channel_layout;
 }
 
 QString AudioOutputOpenAL::name() const
