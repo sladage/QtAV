@@ -1,17 +1,17 @@
 /******************************************************************************
     AudioOutputOpenAL.cpp: description
     Copyright (C) 2012-2014 Wang Bin <wbsecg1@gmail.com>
-    
+
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
     the Free Software Foundation, either version 3 of the License, or
     (at your option) any later version.
-    
+
     This program is distributed in the hope that it will be useful,
     but WITHOUT ANY WARRANTY; without even the implied warranty of
     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
     GNU General Public License for more details.
-    
+
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 ******************************************************************************/
@@ -42,7 +42,7 @@ void RegisterAudioOutputOpenAL_Man()
 }
 
 // TODO: planar
-static ALenum audioFormatToAL(const AudioFormat& fmt, AudioFormat::SampleFormat *pref_format, AudioFormat::ChannelLayout *pref_channel, bool *resample)
+static ALenum audioFormatToAL(const AudioFormat& fmt)
 {
     ALenum format = 0;
     if (fmt.sampleFormat() == AudioFormat::SampleFormat_Unsigned8) {
@@ -59,10 +59,6 @@ static ALenum audioFormatToAL(const AudioFormat& fmt, AudioFormat::SampleFormat 
                 format = alGetEnumValue("AL_FORMAT_71CHN8");
             else if (fmt.channels() == 8)
                 format = alGetEnumValue("AL_FORMAT_81CHN8");
-        } else {
-            format = AL_FORMAT_STEREO8; //default 8bit
-            *pref_channel = AudioFormat::ChannelLayout_Stero;
-            *resample = true;
         }
     } else if (fmt.sampleFormat() == AudioFormat::SampleFormat_Signed16) {
         if (fmt.channels() == 1)
@@ -104,21 +100,16 @@ static ALenum audioFormatToAL(const AudioFormat& fmt, AudioFormat::SampleFormat 
                 format = alGetEnumValue("AL_FORMAT_STEREO_DOUBLE_EXT");
         }
     }
-    if (format == 0) {
+    /*if (format == 0) {
         qWarning("AudioOutputOpenAL Error: No OpenAL format available for audio data format %s %s. Will sample to 16bit audio."
                  , qPrintable(fmt.sampleFormatName())
                  , qPrintable(fmt.channelLayoutName()));
-        *pref_format = AudioFormat::SampleFormat_Signed16;
-        if (fmt.channels() == 1) {
-            format = AL_FORMAT_MONO16;
-            *pref_channel = AudioFormat::ChannelLayout_Mono;
-        } else {
-            format = AL_FORMAT_STEREO16;
-            *pref_channel = AudioFormat::ChannelLayout_Stero;
-        }
-        *resample = true;
     }
-    qDebug("OpenAL audio format: %#x ch:%d, sample format: %s", format, fmt.channels(), qPrintable(fmt.sampleFormatName()));
+    qDebug("OpenAL audio format: %#x ch:%d, sample format: %s", format, fmt.channels(), qPrintable(fmt.sampleFormatName()));*/
+    ALCenum err = alGetError();
+    if (err != AL_NO_ERROR) {
+        qWarning("OpenAL audioFormatToAL error: %s", alGetString(err));
+    }
     return format;
 }
 
@@ -131,7 +122,7 @@ static ALenum audioFormatToAL(const AudioFormat& fmt, AudioFormat::SampleFormat 
     }}
 
 const int kBufferSize = 4096*2;
-const int kBufferCount = 3;
+const ALsizei kBufferCount = 3;
 
 class  AudioOutputOpenALPrivate : public AudioOutputPrivate
 {
@@ -141,11 +132,52 @@ public:
         , format_al(AL_FORMAT_STEREO16)
         , state(0)
         , last_duration(0)
-        , resample(false)
     {
+        //retreive supported format info
+
+        supported_channel_count = 2;
+        pref_channel_layout = AudioFormat::ChannelLayout_Stero;
+
+        if (alIsExtensionPresent("AL_EXT_MCFORMATS")) {
+            //Supports more than 2 channels
+            supported_channel_count = 8;
+        }
+
+        supported_formats << AudioFormat::SampleFormat_Unsigned8 << AudioFormat::SampleFormat_Signed16;
+        pref_format = AudioFormat::SampleFormat_Signed16;
+
+        if (alIsExtensionPresent("AL_EXT_float32")) {
+            //supports float32
+            supported_formats << AudioFormat::SampleFormat_Float;
+        }
+
+        if (alIsExtensionPresent("AL_EXT_double")) {
+            //supports double
+            supported_formats << AudioFormat::SampleFormat_Double;
+        }
+
     }
     ~AudioOutputOpenALPrivate() {
     }
+
+    /*bool isFormatSupported(const AudioFormat &fmt)
+    {
+        if (audioFormatToAL(fmt) != 0)
+            return true;
+
+        //not supported
+        if (fmt.sampleFormat() == AudioFormat::SampleFormat_Unsigned8)
+            pref_format = AudioFormat::SampleFormat_Unsigned8;
+        else
+            pref_format = AudioFormat::SampleFormat_Signed16;
+
+        if (fmt.channels() > 2)
+            pref_channel_layout = AudioFormat::ChannelLayout_Stero;
+        else
+            pref_channel_layout = fmt.channelLayout();
+
+        resample = true;
+    }*/
 
     ALenum format_al;
     ALuint buffer[kBufferCount];
@@ -158,7 +190,9 @@ public:
     QWaitCondition cond;
     AudioFormat::SampleFormat pref_format;
     AudioFormat::ChannelLayout pref_channel_layout;
-    bool resample;
+    //bool resample;
+    QList<AudioFormat::SampleFormat> supported_formats;
+    int supported_channel_count;
 };
 
 AudioOutputOpenAL::AudioOutputOpenAL()
@@ -216,9 +250,8 @@ bool AudioOutputOpenAL::open()
         return false;
     }
     //init params. move to another func?
-    d.pref_format = audioFormat().sampleFormat();
-    d.pref_channel_layout = audioFormat().channelLayout();
-    d.format_al = audioFormatToAL(audioFormat(), &d.pref_format, &d.pref_channel_layout,&d.resample);
+    d.format_al = audioFormatToAL(audioFormat());
+    qDebug("OpenAL audio format: %#x ch:%d, sample format: %s", d.format_al, audioFormat().channels(), qPrintable(audioFormat().sampleFormatName()));
 
     alGenBuffers(kBufferCount, d.buffer);
     err = alGetError();
@@ -294,13 +327,17 @@ bool AudioOutputOpenAL::isSupported(const AudioFormat& format) const
 bool AudioOutputOpenAL::isSupported(AudioFormat::SampleFormat sampleFormat) const
 {
     DPTR_D(const AudioOutputOpenAL);
-    return d.resample;
+    return d.supported_formats.contains(sampleFormat);
 }
 
 bool AudioOutputOpenAL::isSupported(AudioFormat::ChannelLayout channelLayout) const
 {
     DPTR_D(const AudioOutputOpenAL);
-    return d.resample;
+    if (d.supported_channel_count == 2 && (channelLayout == AudioFormat::ChannelLayout_Stero || channelLayout == AudioFormat::ChannelLayout_Mono))
+        return true;
+    else if (d.supported_channel_count > 2)
+        return true;
+    return false;
 }
 
 AudioFormat::SampleFormat AudioOutputOpenAL::preferredSampleFormat() const
