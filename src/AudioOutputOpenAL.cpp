@@ -1,6 +1,7 @@
 /******************************************************************************
     AudioOutputOpenAL.cpp: description
     Copyright (C) 2012-2014 Wang Bin <wbsecg1@gmail.com>
+    Copyright (C) 2014 Stefan Ladage <sladage@gmail.com>
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -45,6 +46,7 @@ void RegisterAudioOutputOpenAL_Man()
 static ALenum audioFormatToAL(const AudioFormat& fmt)
 {
     ALenum format = 0;
+    ALCenum err;
     if (fmt.sampleFormat() == AudioFormat::SampleFormat_Unsigned8) {
         if (fmt.channels() == 1)
                 format = AL_FORMAT_MONO8;
@@ -60,6 +62,7 @@ static ALenum audioFormatToAL(const AudioFormat& fmt)
             else if (fmt.channels() == 8)
                 format = alGetEnumValue("AL_FORMAT_81CHN8");
         }
+
     } else if (fmt.sampleFormat() == AudioFormat::SampleFormat_Signed16) {
         if (fmt.channels() == 1)
             format = AL_FORMAT_MONO16;
@@ -106,7 +109,7 @@ static ALenum audioFormatToAL(const AudioFormat& fmt)
                  , qPrintable(fmt.channelLayoutName()));
     }
     qDebug("OpenAL audio format: %#x ch:%d, sample format: %s", format, fmt.channels(), qPrintable(fmt.sampleFormatName()));*/
-    ALCenum err = alGetError();
+    /*ALCenum */err = alGetError();
     if (err != AL_NO_ERROR) {
         qWarning("OpenAL audioFormatToAL error: %s", alGetString(err));
     }
@@ -134,6 +137,7 @@ public:
         , last_duration(0)
     {
         //retreive supported format info
+        qDebug("Retreive OpenAL supported format info.");
 
         supported_channel_count = 2;
         pref_channel_layout = AudioFormat::ChannelLayout_Stero;
@@ -156,9 +160,11 @@ public:
             supported_formats << AudioFormat::SampleFormat_Double;
         }
 
+
     }
     ~AudioOutputOpenALPrivate() {
     }
+
 
     /*bool isFormatSupported(const AudioFormat &fmt)
     {
@@ -208,6 +214,9 @@ AudioOutputOpenAL::~AudioOutputOpenAL()
 bool AudioOutputOpenAL::open()
 {
     DPTR_D(AudioOutputOpenAL);
+
+    ALCenum err;
+
     d.available = false; // TODO: d.reset()
     QVector<QByteArray> _devices;
     const char *p = NULL;
@@ -225,6 +234,12 @@ bool AudioOutputOpenAL::open()
         p = alcGetString(NULL, ALC_DEVICE_SPECIFIER);
     }
 #endif
+
+    err = alGetError();
+    if (err != ALC_NO_ERROR) {
+        qWarning("OpenAL alcGetString error: %s", alGetString(err));
+    }
+
     while (p && *p) {
         _devices.push_back(p);
         p += _devices.last().size() + 1;
@@ -240,17 +255,25 @@ bool AudioOutputOpenAL::open()
         qWarning("AudioOutputOpenAL Failed to open sound device: %s", alcGetString(0, alcGetError(0)));
         return false;
     }
+
     qDebug("AudioOutputOpenAL creating context...");
     ALCcontext *ctx = alcCreateContext(dev, NULL);
+    err = alcGetError(dev);
+    if (err != ALC_NO_ERROR) {
+        qWarning("AudioOutputOpenAL context Error: %s", alcGetString(dev, err));
+        return false;
+    }
+
     alcMakeContextCurrent(ctx);
     //alcProcessContext(ctx); //used when dealing witg multiple contexts
-    ALCenum err = alcGetError(dev);
+    err = alcGetError(dev);
     if (err != ALC_NO_ERROR) {
-        qWarning("AudioOutputOpenAL Error: %s", alcGetString(dev, err));
+        qWarning("AudioOutputOpenAL makeCurrent Error: %s", alcGetString(dev, err));
         return false;
     }
     //init params. move to another func?
     d.format_al = audioFormatToAL(audioFormat());
+    //d.setALFormat();
     qDebug("OpenAL audio format: %#x ch:%d, sample format: %s", d.format_al, audioFormat().channels(), qPrintable(audioFormat().sampleFormatName()));
 
     alGenBuffers(kBufferCount, d.buffer);
