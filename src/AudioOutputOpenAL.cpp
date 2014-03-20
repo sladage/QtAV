@@ -85,10 +85,6 @@ static ALenum audioFormatToAL(const AudioFormat& fmt)
             else if (fmt.channels() == 2)
                 format = alGetEnumValue("AL_FORMAT_STEREO_FLOAT32");
             else if (alIsExtensionPresent("AL_EXT_MCFORMATS")) {
-                err = alGetError();
-                if (err != AL_NO_ERROR) {
-                    qWarning("OpenAL mcformat error: %s", alGetString(err));
-                }
                 if (fmt.channels() == 4)
                     format = alGetEnumValue("AL_FORMAT_QUAD32");
                 else if (fmt.channels() == 6)
