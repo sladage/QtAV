@@ -124,8 +124,8 @@ static ALenum audioFormatToAL(const AudioFormat& fmt)
         return false; \
     }}
 
-const int kBufferSize = 4096*2;
-const ALsizei kBufferCount = 3;
+const int kBufferSize = 4096*4;
+const ALsizei kBufferCount = 10;
 
 class  AudioOutputOpenALPrivate : public AudioOutputPrivate
 {
@@ -420,16 +420,26 @@ bool AudioOutputOpenAL::write()
 
     ALint processed = 0;
     alGetSourcei(d.source, AL_BUFFERS_PROCESSED, &processed);
+    qDebug("Processed: %d",processed);
     if (processed <= 0) {
         alGetSourcei(d.source, AL_SOURCE_STATE, &d.state);
         if (d.state != AL_PLAYING) {
             alSourcePlay(d.source);
         }
-        //return false;
+        return false;
     }
+
+    /*while (true)
+    {
+        alGetSourcei(d.source, AL_BUFFERS_PROCESSED, &processed);
+        if (processed > 0)
+            break;
+    }*/
+
     const char* b = d.data.constData();
     int remain = d.data.size();
     while (processed--) {
+        qDebug("Process buf %d",processed);
         if (remain <= 0)
             break;
         ALuint buf;

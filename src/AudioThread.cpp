@@ -260,7 +260,8 @@ void AudioThread::run()
                         }
                     }
                 }
-                ao->receiveData(decodedChunk);
+                if (!ao->receiveData(decodedChunk))
+                    msleep((unsigned long)(chunk_delay * 1000.0));
             } else {
             /*
              * why need this even if we add delay? and usleep sounds weird
