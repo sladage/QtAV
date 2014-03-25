@@ -135,6 +135,7 @@ public:
         , format_al(AL_FORMAT_STEREO16)
         , state(0)
         , last_duration(0)
+        , need_more_data(false)
     {
         //retreive supported format info
         qDebug("Retreive OpenAL supported format info.");
@@ -199,6 +200,7 @@ public:
     //bool resample;
     QList<AudioFormat::SampleFormat> supported_formats;
     int supported_channel_count;
+    bool need_more_data;
 };
 
 AudioOutputOpenAL::AudioOutputOpenAL()
@@ -415,7 +417,7 @@ bool AudioOutputOpenAL::write()
     //qDebug("duration: %lld, dt: %lld", d.last_duration, dt);
     d.last_duration = audioFormat().durationForBytes(d.data.size());
 #endif //QT_VERSION >= QT_VERSION_CHECK(4, 8, 0)
-    if (dt > 0LL)
+    if (dt > 0LL && !d.need_more_data)
         d.cond.wait(&d.mutex, (ulong)(dt/1000LL));
 
     ALint processed = 0;
@@ -426,22 +428,23 @@ bool AudioOutputOpenAL::write()
         if (d.state != AL_PLAYING) {
             alSourcePlay(d.source);
         }
-        return false;
+        //if (!d.need_more_data)
+        //    return false;
+        //return false;
     }
-
-    /*while (true)
-    {
-        alGetSourcei(d.source, AL_BUFFERS_PROCESSED, &processed);
-        if (processed > 0)
-            break;
-    }*/
 
     const char* b = d.data.constData();
     int remain = d.data.size();
     while (processed--) {
-        qDebug("Process buf %d",processed);
-        if (remain <= 0)
+        qDebug("Process buffer %d",processed);
+        if (remain <= 0) {
+            if (processed > 0) {
+                qDebug("Need more data.");
+                d.need_more_data = true;
+            } else
+                d.need_more_data = false;
             break;
+        }
         ALuint buf;
         //unqueues a set of buffers attached to a source
         alSourceUnqueueBuffers(d.source, 1, &buf);
